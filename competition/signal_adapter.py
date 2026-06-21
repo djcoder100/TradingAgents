@@ -132,6 +132,7 @@ class SignalAdapter:
             step_counter = [0]
             last_node = [None]  # deduplicate consecutive firings of the same node (tool-calling loop)
             total_stages = _compute_total_stages(TA_ANALYSTS, TA_MAX_DEBATE_ROUNDS, TA_MAX_RISK_ROUNDS)
+            node_times: dict[str, list[float]] = {}  # node_name → [start, end] times for timing
 
             def _on_node(node_name: str) -> None:
                 label = _NODE_LABELS.get(node_name)
@@ -141,21 +142,38 @@ class SignalAdapter:
                 # the first firing (node transition); subsequent same-node firings just
                 # update the dashboard label without advancing the counter.
                 if node_name != last_node[0]:
+                    # End previous node timing
+                    if last_node[0] is not None and last_node[0] in node_times:
+                        node_times[last_node[0]].append(time.time())
+                    # Start new node timing
+                    if node_name not in node_times:
+                        node_times[node_name] = [time.time()]
+
                     step_counter[0] = min(step_counter[0] + 1, total_stages)
                     last_node[0] = node_name
-                logger.info(
-                    "TA [%s] %d/%d — %s",
-                    ticker, step_counter[0], total_stages, label,
-                )
-                if state_bus is not None:
-                    state_bus.set_analysis_progress(
-                        ticker, label, step_counter[0], total_stages, started_at
+
+                    elapsed = time.time() - started_at
+                    logger.info(
+                        "TA [%s] %d/%d — %s [+%.1fs total]",
+                        ticker, step_counter[0], total_stages, label, elapsed,
                     )
+                    if state_bus is not None:
+                        state_bus.set_analysis_progress(
+                            ticker, label, step_counter[0], total_stages, started_at
+                        )
 
             if state_bus is not None:
                 state_bus.set_analysis_progress(ticker, "Initializing pipeline…", 0, total_stages, started_at)
 
+            pipeline_start = time.time()
             final_state, _signal_ta = graph.propagate(ticker, trade_date, progress_callback=_on_node)
+            pipeline_elapsed = time.time() - pipeline_start
+
+            # End final node timing
+            if last_node[0] is not None and last_node[0] in node_times:
+                node_times[last_node[0]].append(time.time())
+
+            logger.info("TA [%s] pipeline completed in %.1f seconds", ticker, pipeline_elapsed)
 
             decision_text = final_state.get("final_trade_decision", "")
             if not decision_text:
@@ -165,14 +183,15 @@ class SignalAdapter:
             rating = parse_rating(decision_text)
             result = self._parse_decision(decision_text, rating, identity)
             logger.info(
-                "TA signal for %s (%s): rating=%s action=%s confidence=%.2f",
+                "TA signal for %s (%s): rating=%s action=%s confidence=%.2f [%d nodes, %.1f sec total]",
                 ticker, name, rating, result.get("action"), result.get("confidence", 0),
+                len(node_times), pipeline_elapsed,
             )
             if state_bus is not None:
                 state_bus.clear_analysis_progress(ticker)
                 state_bus.set_full_analysis(
                     analysis_id,
-                    self._build_full_analysis(analysis_id, ticker, trade_date, final_state, result, identity),
+                    self._build_full_analysis(analysis_id, ticker, trade_date, final_state, result, identity, node_times, pipeline_elapsed),
                 )
             result["analysis_id"] = analysis_id
             return result
@@ -253,12 +272,23 @@ class SignalAdapter:
         final_state: dict,
         parsed: dict,
         identity: Optional[dict] = None,
+        node_times: Optional[dict[str, list[float]]] = None,
+        elapsed_seconds: float = 0.0,
     ) -> dict:
         """Package the complete pipeline state into AnalysisResultResponse shape."""
         inv = final_state.get("investment_debate_state") or {}
         risk = final_state.get("risk_debate_state") or {}
         rating = parsed.get("rating", "hold").capitalize()
         name = (identity or {}).get("company_name", ticker) if identity else ticker
+
+        # Compute per-node wall-clock times
+        analyst_times = {}
+        if node_times:
+            for node_name, times in node_times.items():
+                if len(times) >= 2:
+                    node_label = _NODE_LABELS.get(node_name, node_name)
+                    analyst_times[node_label] = round(times[-1] - times[0], 2)
+
         return {
             "task_id": analysis_id,
             "ticker": ticker,
@@ -291,8 +321,8 @@ class SignalAdapter:
                 "tool_calls": 0,
                 "tokens_in": 0,
                 "tokens_out": 0,
-                "elapsed_seconds": 0,
-                "analyst_wall_times": {},
+                "elapsed_seconds": round(elapsed_seconds, 2),
+                "analyst_wall_times": analyst_times,
             },
             "asset_type": "stock",
             "instrument_context": None,
