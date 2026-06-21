@@ -195,6 +195,30 @@ An interface will appear showing results as they load, letting you track the age
   <img src="assets/cli/cli_transaction.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>
 
+### Web Frontend
+
+TradingAgents ships with a React web interface inspired by Trading 212 — configure analyses, watch live agent progress, and browse historical results with reflections, all in your browser.
+
+```bash
+# Install frontend dependencies (one-time)
+cd frontend && npm install
+
+# Start both servers with the launch script
+./scripts/start.sh
+```
+
+Or run them separately:
+
+```bash
+# Terminal 1 — Backend API
+uv run uvicorn web.main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Frontend dev server
+cd frontend && npm run dev
+```
+
+Open **http://localhost:5173** and configure your analysis — the same options as the CLI: ticker, date, analysts, LLM provider, model selection, research depth, and provider-specific reasoning config. The dashboard streams live agent progress, then renders the full report with analyst cards, debate panels, and the Portfolio Manager's final decision. Past runs and their reflections are browsable from the History tab.
+
 ## TradingAgents Package
 
 ### Implementation Details

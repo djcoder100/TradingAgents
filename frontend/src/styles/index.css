@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* Trading 212-inspired dark theme */
+@theme {
+  --color-trading-bg: #0b1426;
+  --color-trading-surface: #1a2332;
+  --color-trading-surface2: #232e3e;
+  --color-trading-border: #2a3749;
+  --color-trading-emerald: #00c853;
+  --color-trading-green: #4caf50;
+  --color-trading-red: #f44336;
+  --color-trading-amber: #ff9800;
+  --color-trading-text: #e0e6ed;
+  --color-trading-textdim: #8896a6;
+  --color-trading-accent: #2196f3;
+}
+
+/* Base styles */
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: #0b1426;
+  color: #e0e6ed;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1a2332;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3749;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4759;
+}
+
+/* Markdown styles for analyst reports */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  color: #00c853;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+.markdown-content h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.markdown-content p {
+  margin-bottom: 0.75em;
+  line-height: 1.6;
+}
+.markdown-content ul,
+.markdown-content ol {
+  margin-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+.markdown-content li {
+  margin-bottom: 0.25em;
+}
+.markdown-content strong {
+  color: #4caf50;
+}
+.markdown-content code {
+  background: #1a2332;
+  padding: 0.125em 0.375em;
+  border-radius: 3px;
+  font-size: 0.875em;
+}
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid #2a3749;
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.markdown-content th {
+  background: #1a2332;
+  color: #00c853;
+}
+
+/* Animations */
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.animate-pulse-green {
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}

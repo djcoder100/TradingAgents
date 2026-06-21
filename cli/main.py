@@ -22,6 +22,7 @@ from rich.align import Align
 from rich.rule import Rule
 
 from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.agents.utils.agent_utils import resolve_instrument_identity
 from tradingagents.graph.analyst_execution import (
     AnalystWallTimeTracker,
     build_analyst_execution_plan,
@@ -237,6 +238,7 @@ def create_layout():
     layout = Layout()
     layout.split_column(
         Layout(name="header", size=3),
+        Layout(name="dashboard", size=5),
         Layout(name="main"),
         Layout(name="footer", size=3),
     )
@@ -249,6 +251,136 @@ def create_layout():
     return layout
 
 
+def fetch_market_snapshot(ticker: str) -> dict | None:
+    """Quick best-effort market data for the dashboard cards.
+
+    Returns a dict with *price*, *change*, *change_pct*, *volume*, and
+    *market_cap* (all formatted strings), or ``None`` on any failure.
+    """
+    try:
+        import yfinance as yf
+        from tradingagents.dataflows.symbol_utils import normalize_symbol
+
+        canonical = normalize_symbol(ticker)
+        t = yf.Ticker(canonical)
+
+        # Get latest price from history (1 month, so it works for most dates)
+        hist = t.history(period="1mo")
+        if hist.empty:
+            return None
+        latest = hist["Close"].iloc[-1]
+        prev = hist["Close"].iloc[-2] if len(hist) >= 2 else latest
+        change = latest - prev
+        change_pct = (change / prev) * 100 if prev else 0.0
+        volume = hist["Volume"].iloc[-1] if "Volume" in hist.columns else 0
+
+        info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            pass
+        market_cap = info.get("marketCap")
+
+        def fmt_mktcap(val):
+            if val is None:
+                return "N/A"
+            if val >= 1e12:
+                return f"${val/1e12:.2f}T"
+            if val >= 1e9:
+                return f"${val/1e9:.2f}B"
+            if val >= 1e6:
+                return f"${val/1e6:.1f}M"
+            return f"${val:,.0f}"
+
+        def fmt_vol(val):
+            if val is None or val == 0:
+                return "N/A"
+            if val >= 1e9:
+                return f"{val/1e9:.2f}B"
+            if val >= 1e6:
+                return f"{val/1e6:.1f}M"
+            if val >= 1e3:
+                return f"{val/1e3:.1f}K"
+            return str(int(val))
+
+        direction = "▲" if change >= 0 else "▼"
+        color = "green" if change >= 0 else "red"
+
+        return {
+            "price": f"${latest:,.2f}",
+            "change": f"{direction} ${abs(change):,.2f}",
+            "change_pct": f"{direction} {abs(change_pct):.2f}%",
+            "color": color,
+            "volume": fmt_vol(volume),
+            "market_cap": fmt_mktcap(market_cap),
+        }
+    except Exception:
+        return None
+
+
+def build_dashboard(ticker: str, identity: dict | None, start_time_str: str,
+                    elapsed_str: str, market: dict | None,
+                    agents_done: int, agents_total: int,
+                    reports_done: int, reports_total: int,
+                    llm_calls: str = "—", tokens: str = "—") -> Panel:
+    """Build the dashboard row as a Panel containing three info cards side by side."""
+    from rich.table import Table
+    from rich import box
+
+    # --- Card 1: Ticker & Run Info ---
+    name = (identity or {}).get("company_name", "—")
+    sector = (identity or {}).get("sector")
+    industry = (identity or {}).get("industry")
+    biz = sector or industry or "—"
+
+    run_card = Table(box=box.SIMPLE, show_header=False, padding=(0, 1), expand=True)
+    run_card.add_column("", style="dim", width=12)
+    run_card.add_column("", style="bold white")
+    run_card.add_row("Ticker", f"[bold cyan]{ticker}[/bold cyan]")
+    run_card.add_row("Company", name)
+    run_card.add_row("Sector", biz)
+    run_card.add_row("Date", start_time_str.split(" ")[0] if start_time_str else "—")
+    run_card.add_row("Started", start_time_str.split(" ")[1] if " " in (start_time_str or "") else "—")
+    run_card.add_row("Elapsed", elapsed_str)
+
+    # --- Card 2: Market Snapshot ---
+    mkt_card = Table(box=box.SIMPLE, show_header=False, padding=(0, 1), expand=True)
+    mkt_card.add_column("", style="dim", width=12)
+    mkt_card.add_column("", style="bold white")
+    if market:
+        mkt_card.add_row("Price", market["price"])
+        mkt_card.add_row("Change", f"[{market['color']}]{market['change']} ({market['change_pct']})[/{market['color']}]")
+        mkt_card.add_row("Volume", market["volume"])
+        mkt_card.add_row("Market Cap", market["market_cap"])
+    else:
+        mkt_card.add_row("Price", "[dim]fetching…[/dim]")
+        mkt_card.add_row("Change", "[dim]—[/dim]")
+        mkt_card.add_row("Volume", "[dim]—[/dim]")
+        mkt_card.add_row("Market Cap", "[dim]—[/dim]")
+
+    # --- Card 3: Run Progress ---
+    prog_card = Table(box=box.SIMPLE, show_header=False, padding=(0, 1), expand=True)
+    prog_card.add_column("", style="dim", width=12)
+    prog_card.add_column("", style="bold white")
+    prog_card.add_row("Agents", f"[yellow]{agents_done}/{agents_total}[/yellow]")
+    prog_card.add_row("Reports", f"[yellow]{reports_done}/{reports_total}[/yellow]")
+    prog_card.add_row("LLM Calls", llm_calls)
+    prog_card.add_row("Tokens", tokens)
+
+    # Lay out the three cards horizontally
+    cards_table = Table(box=None, show_header=False, padding=(0, 1), expand=True)
+    cards_table.add_column("Run Info", ratio=3)
+    cards_table.add_column("Market", ratio=2)
+    cards_table.add_column("Progress", ratio=2)
+    cards_table.add_row(
+        Panel(run_card, title="[bold]Instrument[/bold]", border_style="cyan", padding=(0, 1)),
+        Panel(mkt_card, title="[bold]Market Snapshot[/bold]", border_style="blue", padding=(0, 1)),
+        Panel(prog_card, title="[bold]Progress[/bold]", border_style="magenta", padding=(0, 1)),
+    )
+
+    return Panel(cards_table, border_style="green", padding=(0, 1))
+
+
 def format_tokens(n):
     """Format token count for display."""
     if n >= 1000:
@@ -256,18 +388,60 @@ def format_tokens(n):
     return str(n)
 
 
-def update_display(layout, spinner_text=None, stats_handler=None, start_time=None):
+def update_display(layout, spinner_text=None, stats_handler=None, start_time=None,
+                   start_time_str=None):
     # Header with welcome message
+    header_content = "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
+    if start_time_str:
+        header_content += f"[dim]Started: {start_time_str}[/dim]\n"
+    header_content += "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]"
     layout["header"].update(
         Panel(
-            "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
-            "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
+            header_content,
             title="Welcome to TradingAgents",
             border_style="green",
             padding=(1, 2),
             expand=True,
         )
     )
+
+    # Dashboard row — three info cards (Instrument / Market Snapshot / Progress)
+    db = getattr(message_buffer, "dashboard_data", None)
+    if db:
+        elapsed = time.time() - start_time if start_time else 0
+        elapsed_str = f"{int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
+        agents_completed = sum(
+            1 for s in message_buffer.agent_status.values() if s == "completed"
+        )
+        agents_total = len(message_buffer.agent_status)
+        reports_completed = message_buffer.get_completed_reports_count()
+        reports_total = len(message_buffer.report_sections)
+
+        # Inject latest LLM stats into card 3 placeholders
+        llm_calls = "—"
+        tokens = "—"
+        if stats_handler:
+            stats = stats_handler.get_stats()
+            llm_calls = str(stats.get("llm_calls", 0))
+            tokens_in = stats.get("tokens_in", 0)
+            tokens_out = stats.get("tokens_out", 0)
+            tokens = f"{format_tokens(tokens_in)}↑ {format_tokens(tokens_out)}↓" if (tokens_in or tokens_out) else "—"
+
+        layout["dashboard"].update(
+            build_dashboard(
+                ticker=db["ticker"],
+                identity=db.get("identity"),
+                start_time_str=start_time_str or "",
+                elapsed_str=elapsed_str,
+                market=db.get("market"),
+                agents_done=agents_completed,
+                agents_total=agents_total,
+                reports_done=reports_completed,
+                reports_total=reports_total,
+                llm_calls=llm_calls,
+                tokens=tokens,
+            )
+        )
 
     # Progress panel showing agent status
     progress_table = Table(
@@ -1032,9 +1206,23 @@ def run_analysis(checkpoint: bool = False):
 
     # Track start time for elapsed display
     start_time = time.time()
+    start_time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    run_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Create result directory
-    results_dir = Path(config["results_dir"]) / selections["ticker"] / selections["analysis_date"]
+    # Let _log_state use the same timestamp for its JSON filename.
+    graph._run_timestamp = run_timestamp
+
+    # Prime the dashboard with ticker-only data; identity + market snapshot
+    # are filled in once the instrument lookup completes.
+    message_buffer.dashboard_data = {
+        "ticker": selections["ticker"],
+        "identity": None,
+        "market": None,
+    }
+
+    # Create result directory keyed by analysis date + run timestamp so
+    # re-running the same ticker on the same date never overwrites.
+    results_dir = Path(config["results_dir"]) / selections["ticker"] / f"{selections['analysis_date']}_{run_timestamp}"
     results_dir.mkdir(parents=True, exist_ok=True)
     report_dir = results_dir / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -1086,7 +1274,7 @@ def run_analysis(checkpoint: bool = False):
 
     with Live(layout, refresh_per_second=4) as live:
         # Initial display
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, stats_handler=stats_handler, start_time=start_time, start_time_str=start_time_str)
 
         # Add initial messages
         message_buffer.add_message("System", f"Selected ticker: {selections['ticker']}")
@@ -1099,19 +1287,19 @@ def run_analysis(checkpoint: bool = False):
             "System",
             f"Selected analysts: {', '.join(analyst.value for analyst in selections['analysts'])}",
         )
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, stats_handler=stats_handler, start_time=start_time, start_time_str=start_time_str)
 
         # Update agent status to in_progress for the first analyst
         first_analyst = get_initial_analyst_node(analyst_execution_plan)
         message_buffer.update_agent_status(first_analyst, "in_progress")
         analyst_wall_time_tracker.mark_started(selected_analyst_keys[0])
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, stats_handler=stats_handler, start_time=start_time, start_time_str=start_time_str)
 
         # Create spinner text
         spinner_text = (
             f"Analyzing {selections['ticker']} on {selections['analysis_date']}..."
         )
-        update_display(layout, spinner_text, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, spinner_text, stats_handler=stats_handler, start_time=start_time, start_time_str=start_time_str)
 
         # Initialize state and get graph args with callbacks.
         # Resolve the instrument identity once here so all agents anchor to
@@ -1120,6 +1308,27 @@ def run_analysis(checkpoint: bool = False):
         instrument_context = graph.resolve_instrument_context(
             selections["ticker"], selections["asset_type"]
         )
+
+        # Show the resolved instrument identity so the user can confirm.
+        identity = resolve_instrument_identity(selections["ticker"])
+        if identity:
+            name = identity.get("company_name") or selections["ticker"]
+            parts = [f"Resolved: {name}"]
+            for key, label in [("sector", "Sector"), ("industry", "Industry"), ("exchange", "Exchange")]:
+                val = identity.get(key)
+                if val:
+                    parts.append(f"{label}: {val}")
+            message_buffer.add_message("System", " | ".join(parts))
+
+        # Fetch market snapshot for the dashboard cards (best-effort).
+        market = fetch_market_snapshot(selections["ticker"])
+        message_buffer.dashboard_data = {
+            "ticker": selections["ticker"],
+            "identity": identity,
+            "market": market,
+        }
+        update_display(layout, stats_handler=stats_handler, start_time=start_time, start_time_str=start_time_str)
+
         init_agent_state = graph.propagator.create_initial_state(
             selections["ticker"],
             selections["analysis_date"],
@@ -1231,7 +1440,7 @@ def run_analysis(checkpoint: bool = False):
                         message_buffer.update_agent_status("Portfolio Manager", "completed")
 
             # Update the display
-            update_display(layout, stats_handler=stats_handler, start_time=start_time)
+            update_display(layout, stats_handler=stats_handler, start_time=start_time, start_time_str=start_time_str)
 
             trace.append(chunk)
 
@@ -1256,7 +1465,7 @@ def run_analysis(checkpoint: bool = False):
             if section in final_state:
                 message_buffer.update_report_section(section, final_state[section])
 
-        update_display(layout, stats_handler=stats_handler, start_time=start_time)
+        update_display(layout, stats_handler=stats_handler, start_time=start_time, start_time_str=start_time_str)
 
     # Post-analysis prompts (outside Live context for clean interaction)
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")

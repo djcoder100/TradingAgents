@@ -7,7 +7,8 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 from .config import get_config
-from .stockstats_utils import yf_retry
+from .stockstats_utils import yf_retry, yf_call_with_crumb_retry
+from .symbol_utils import normalize_symbol
 
 
 def _extract_article_data(article: dict) -> dict:
@@ -68,9 +69,9 @@ def get_news_yfinance(
         Formatted string containing news articles
     """
     article_limit = get_config()["news_article_limit"]
+    canonical = normalize_symbol(ticker)
     try:
-        stock = yf.Ticker(ticker)
-        news = yf_retry(lambda: stock.get_news(count=article_limit))
+        news = yf_call_with_crumb_retry(lambda: yf.Ticker(canonical).get_news(count=article_limit))
 
         if not news:
             return f"No news found for {ticker}"
@@ -138,7 +139,7 @@ def get_global_news_yfinance(
 
     try:
         for query in search_queries:
-            search = yf_retry(lambda q=query: yf.Search(
+            search = yf_call_with_crumb_retry(lambda q=query: yf.Search(
                 query=q,
                 news_count=limit,
                 enable_fuzzy_query=True,

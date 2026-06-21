@@ -62,6 +62,32 @@ def _clean_dataframe(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
+def yf_call_with_crumb_retry(fn_factory, max_crumb_retries=1):
+    """Execute a yfinance call with retry on stale/invalid crumb as well as rate limits.
+
+    ``fn_factory()`` must be a zero-arg callable that creates a *fresh*
+    ``yf.Ticker`` (or ``yf.Search`` or ``yf.download`` call) and returns the
+    result.  On ``"Invalid Crumb"`` / ``"Unauthorized"`` errors the factory is
+    re-called so the session (and its cookie) is rebuilt.
+
+    ``YFRateLimitError`` (HTTP 429) retries are still handled by the inner
+    ``yf_retry`` wrapper, so this function layers crumb-refresh on top.
+    """
+    for attempt in range(max_crumb_retries + 1):
+        try:
+            return yf_retry(fn_factory)
+        except Exception as e:
+            msg = str(e)
+            if ("Invalid Crumb" in msg or "Unauthorized" in msg) and attempt < max_crumb_retries:
+                logger.warning(
+                    "yfinance crumb expired, recreating session (attempt %d)",
+                    attempt + 1,
+                )
+                time.sleep(1.5)
+                continue
+            raise
+
+
 def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     """Fetch OHLCV data with caching, filtered to prevent look-ahead bias.
 
@@ -100,7 +126,7 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
             data = cached
 
     if data is None:
-        downloaded = yf_retry(lambda: yf.download(
+        downloaded = yf_call_with_crumb_retry(lambda: yf.download(
             canonical,
             start=start_str,
             end=end_str,

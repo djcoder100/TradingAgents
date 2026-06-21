@@ -122,7 +122,7 @@ def normalize_symbol(raw: str) -> str:
         canonical = s
 
     if canonical != raw.strip().upper():
-        logger.info("Resolved symbol %r to Yahoo symbol %r", raw, canonical)
+        logger.debug("Resolved symbol %r to Yahoo symbol %r", raw, canonical)
     return canonical
 
 

@@ -30,13 +30,18 @@ dependencies = [
     "tqdm>=4.67.1",
     "typing-extensions>=4.14.0",
     "yfinance>=1.4.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "sse-starlette>=2.2.0",
+    "python-multipart>=0.0.18",
 ]
 
 [project.scripts]
 tradingagents = "cli.main:app"
+competition = "competition.main:main"
 
 [tool.setuptools.packages.find]
-include = ["tradingagents*", "cli*"]
+include = ["tradingagents*", "cli*", "web*", "competition*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]

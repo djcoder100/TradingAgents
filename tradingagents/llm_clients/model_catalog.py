@@ -131,11 +131,13 @@ MODEL_OPTIONS: ProviderModeOptions = {
     "deepseek": {
         "quick": [
             ("DeepSeek V4 Flash - Latest V4 fast model", "deepseek-v4-flash"),
+            ("DeepSeek V4 Flash (via Doubleword/Logfire gateway)", "deepseek-ai/DeepSeek-V4-Flash"),
             ("DeepSeek V3.2", "deepseek-chat"),
             ("Custom model ID", "custom"),
         ],
         "deep": [
             ("DeepSeek V4 Pro - Latest V4 flagship model", "deepseek-v4-pro"),
+            ("DeepSeek V4 Pro (via Doubleword/Logfire gateway)", "deepseek-ai/DeepSeek-V4-Pro"),
             ("DeepSeek V3.2 (thinking)", "deepseek-reasoner"),
             ("DeepSeek V3.2", "deepseek-chat"),
             ("Custom model ID", "custom"),

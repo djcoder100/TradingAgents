@@ -90,12 +90,29 @@ def _fetch_subreddit_rss(
     post is tagged ``source="rss"`` for honest display.
     """
     url = _RSS.format(sub=sub, qs=_search_qs(ticker, limit))
-    req = Request(url, headers={"User-Agent": _UA})
-    try:
-        with urlopen(req, timeout=timeout) as resp:
-            root = ET.fromstring(resp.read())
-    except (HTTPError, URLError, TimeoutError, ET.ParseError) as exc:
-        logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
+    rss_posts = []
+    for attempt in range(3):  # original + up to 2 retries on 429
+        req = Request(url, headers={"User-Agent": _UA})
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                root = ET.fromstring(resp.read())
+            break
+        except HTTPError as exc:
+            if exc.code == 429 and attempt < 2:
+                delay = 2.0 * (2 ** attempt)
+                logger.warning(
+                    "Reddit RSS rate-limited for r/%s · %s, retrying in %.0fs (attempt %d/2)",
+                    sub, ticker, delay, attempt + 1,
+                )
+                time.sleep(delay)
+                continue
+            logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
+            return []
+        except (URLError, TimeoutError, ET.ParseError) as exc:
+            logger.warning("Reddit RSS fetch failed for r/%s · %s: %s", sub, ticker, exc)
+            return []
+    else:
+        # Exhausted retries on 429
         return []
 
     posts = []
@@ -134,6 +151,9 @@ def _fetch_subreddit(
             "Reddit JSON fetch failed for r/%s · %s: %s — falling back to RSS feed.",
             sub, ticker, exc,
         )
+        # Brief pause before the fallback request so we don't hammer the RSS
+        # endpoint back-to-back after the WAF already blocked the JSON call.
+        time.sleep(1.5)
         return _fetch_subreddit_rss(ticker, sub, limit, timeout)
 
 
@@ -142,7 +162,7 @@ def fetch_reddit_posts(
     subreddits: Iterable[str] = DEFAULT_SUBREDDITS,
     limit_per_sub: int = 5,
     timeout: float = 10.0,
-    inter_request_delay: float = 0.4,
+    inter_request_delay: float = 2.0,
 ) -> str:
     """Fetch recent Reddit posts mentioning ``ticker`` across finance
     subreddits and return them as a formatted plaintext block.
