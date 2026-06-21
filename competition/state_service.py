@@ -38,7 +38,9 @@ _STATE: Dict[str, Any] = {
 }
 
 _LOCK = Lock()
-_STATE_FILE = Path.home() / ".tradingagents" / "shared_state.json"
+_STATE_DIR = Path.home() / ".tradingagents"
+_STATE_FILE = _STATE_DIR / "shared_state.json"
+_TRADE_HISTORY_FILE = _STATE_DIR / "trade_history.json"
 
 app = FastAPI(title="Competition State Service")
 
@@ -53,6 +55,16 @@ def _load_state() -> None:
             logger.info(f"Loaded state from {_STATE_FILE}")
         except Exception as e:
             logger.error(f"Failed to load state: {e}")
+
+    # Also load trade history from the engine's persisted file
+    if _TRADE_HISTORY_FILE.exists():
+        try:
+            with open(_TRADE_HISTORY_FILE) as f:
+                trades = json.load(f)
+            _STATE["trades"] = trades if isinstance(trades, list) else []
+            logger.info(f"Loaded {len(_STATE['trades'])} trades from {_TRADE_HISTORY_FILE}")
+        except Exception as e:
+            logger.error(f"Failed to load trade history: {e}")
 
 
 def _save_state() -> None:
