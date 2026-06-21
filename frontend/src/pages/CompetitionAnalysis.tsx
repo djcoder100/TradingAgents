@@ -31,14 +31,26 @@ export default function CompetitionAnalysis() {
     (async () => {
       try {
         const startTime = Date.now();
-        const res = await fetch(`${API_BASE}/competition/analysis/${analysisId}`, {
+
+        // Try to load by the provided ID/ticker
+        let res = await fetch(`${API_BASE}/competition/analysis/${analysisId}`, {
           signal: AbortSignal.timeout(30000),
         });
         const duration = Date.now() - startTime;
 
-        const body = await res.json().catch(() => ({}));
+        let body = await res.json().catch(() => ({}));
+
+        // If not found and looks like a ticker, try uppercasing it
+        if (!res.ok && analysisId && !analysisId.includes('-')) {
+          console.info(`[CompetitionAnalysis] Not found, trying uppercase ticker`);
+          res = await fetch(`${API_BASE}/competition/analysis/${analysisId.toUpperCase()}`, {
+            signal: AbortSignal.timeout(30000),
+          });
+          body = await res.json().catch(() => ({}));
+        }
+
         if (!res.ok) {
-          const errMsg = body.error || `HTTP ${res.status}`;
+          const errMsg = body.error || `HTTP ${res.status}: Analysis not found. Make sure the LLM pipeline has completed for this instrument.`;
           console.error(`[CompetitionAnalysis] Failed to load analysis: ${errMsg}`);
           throw new Error(errMsg);
         }

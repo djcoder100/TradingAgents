@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, TrendingDown, Activity,
@@ -123,6 +123,9 @@ export default function Competition() {
   const [lastError, setLastError] = useState<{ message: string; time: string } | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
+  const [filterTicker, setFilterTicker] = useState<string>('');
+  const [filterAction, setFilterAction] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
 
   const fetchState = useCallback(async () => {
     try {
@@ -247,6 +250,19 @@ export default function Competition() {
   const { signals, positions, trades, account, metrics, violations, uptime, analysis_progress, round_trip_count } = state;
   const runningAnalyses = Object.entries(analysis_progress || {});
 
+  // Filter trades based on selected filters
+  const filteredTrades = trades.filter(t => {
+    if (filterTicker && !t.ticker.toLowerCase().includes(filterTicker.toLowerCase())) return false;
+    if (filterAction && t.action !== filterAction) return false;
+    if (filterStatus && t.status !== filterStatus) return false;
+    return true;
+  });
+
+  // Get unique values for filter dropdowns
+  const uniqueTickers = [...new Set(trades.map(t => t.ticker))];
+  const uniqueActions = [...new Set(trades.map(t => t.action))];
+  const uniqueStatuses = [...new Set(trades.map(t => t.status))];
+
   return (
     <div className="space-y-6 animate-slide-up">
       <div className="flex items-center justify-between">
@@ -278,6 +294,38 @@ export default function Competition() {
         <ScoreCard icon={Repeat2} label="Round-trips" value={`${round_trip_count ?? 0}/30`} color={(round_trip_count ?? 0) >= 30 ? 'text-trading-green' : (round_trip_count ?? 0) >= 15 ? 'text-trading-amber' : 'text-trading-textdim'}
           tooltip="Completed round-trip trades (open + close = 1 round-trip). The Best Sharpe category requires ≥30 round-trips to be eligible. Each entry/exit pair counts as one. Currently at half-way when amber." />
       </div>
+
+      {/* ---- Risk Metrics Breakdown ---- */}
+      {account && (
+        <div className="bg-trading-surface border border-trading-border rounded-xl p-4">
+          <div className="flex items-center gap-1.5 mb-3">
+            <h2 className="text-sm font-semibold text-trading-textdim uppercase tracking-wide">Risk Profile</h2>
+            <Tooltip content="Your current risk exposure: open positions, margin usage, leverage, and portfolio concentration. The firewall enforces hard limits: 25x max leverage, 80% max margin usage, 30x disqualification." position="bottom" maxWidth={260}>
+              <Info className="w-3 h-3 text-trading-border hover:text-trading-textdim cursor-help transition-colors" />
+            </Tooltip>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim mb-1">Open Positions</p>
+              <p className="font-mono font-bold text-trading-text">{account.open_positions_count}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim mb-1">Used Margin</p>
+              <p className="font-mono font-bold text-trading-text">${account.used_margin.toFixed(0)}</p>
+              <p className="text-trading-textdim text-xs mt-1">{(account.margin_usage_pct * 100).toFixed(1)}% of equity</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim mb-1">Current Leverage</p>
+              <p className={`font-mono font-bold ${account.leverage > 25 ? 'text-trading-red' : account.leverage > 15 ? 'text-trading-amber' : 'text-trading-emerald'}`}>{account.leverage.toFixed(1)}x</p>
+              <p className="text-trading-textdim text-xs mt-1">Max: 25x</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim mb-1">Equity</p>
+              <p className="font-mono font-bold text-trading-text">{formatNotional(account.equity)}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Alerts ---- */}
       {violations.length > 0 && (
@@ -322,7 +370,14 @@ export default function Competition() {
                 <div key={ticker}>
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-sm text-trading-text">{ticker}</span>
+                      <a
+                        href={`https://finviz.com/quote.ashx?t=${ticker.replace(/[=X]/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono font-bold text-sm text-trading-emerald hover:text-trading-emerald/80 transition-colors underline"
+                      >
+                        {ticker}
+                      </a>
                       <span className="text-xs text-trading-textdim">{prog.stage}</span>
                     </div>
                     <div className="flex items-center gap-3 text-xs text-trading-textdim">
@@ -370,7 +425,15 @@ export default function Competition() {
                   onClick={() => navigate(`/competition/analysis/${s.analysis_id || s.ticker}`)}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-sm text-trading-text">{s.ticker}</span>
+                    <a
+                      href={`https://finviz.com/quote.ashx?t=${s.ticker.replace(/[=X]/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-mono font-bold text-sm text-trading-emerald hover:text-trading-text transition-colors underline"
+                    >
+                      {s.ticker}
+                    </a>
                     <SignalBadge signal={s.action} size="sm" />
                     {s.analysis && (
                       <span className="text-xs text-trading-emerald opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
@@ -415,7 +478,14 @@ export default function Competition() {
               {positions.map((p, i) => (
                 <div key={`${p.ticker}-${i}`} className="flex items-center justify-between p-3 rounded-lg bg-trading-surface2">
                   <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-sm text-trading-text">{p.ticker}</span>
+                    <a
+                      href={`https://finviz.com/quote.ashx?t=${p.ticker.replace(/[=X]/g, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono font-bold text-sm text-trading-emerald hover:text-trading-text transition-colors underline"
+                    >
+                      {p.ticker}
+                    </a>
                     <SignalBadge signal={p.direction} size="sm" />
                     <Tooltip content="Notional USD exposure for this position (shares × price). This counts toward your leverage and margin calculations." position="top">
                       <span className="text-xs text-trading-textdim cursor-help">{formatNotional(p.size_notional)}</span>
@@ -446,14 +516,55 @@ export default function Competition() {
       <div className="bg-trading-surface border border-trading-border rounded-xl p-4">
         <div className="flex items-center gap-1.5 mb-3">
           <h2 className="text-sm font-semibold text-trading-textdim uppercase tracking-wide">
-            Trade History ({trades.length})
+            Trade History ({filteredTrades.length}/{trades.length})
           </h2>
-          <Tooltip content="All orders dispatched by the competition engine. In dry-run mode, orders are simulated at market price with no real execution. Click 'View' to open the full LLM analysis that generated the signal." position="bottom" maxWidth={270}>
+          <Tooltip content="All orders dispatched by the competition engine. In dry-run mode, orders are simulated at market price with no real execution. Click a row to expand details or 'View' to open the full LLM analysis." position="bottom" maxWidth={270}>
             <Info className="w-3 h-3 text-trading-border hover:text-trading-textdim cursor-help transition-colors" />
           </Tooltip>
         </div>
+
+        {/* Filters */}
+        {trades.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            <select
+              value={filterTicker}
+              onChange={(e) => setFilterTicker(e.target.value)}
+              className="px-2 py-1 text-xs bg-trading-surface2 border border-trading-border rounded text-trading-text focus:outline-none"
+            >
+              <option value="">All Tickers</option>
+              {uniqueTickers.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              value={filterAction}
+              onChange={(e) => setFilterAction(e.target.value)}
+              className="px-2 py-1 text-xs bg-trading-surface2 border border-trading-border rounded text-trading-text focus:outline-none"
+            >
+              <option value="">All Actions</option>
+              {uniqueActions.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="px-2 py-1 text-xs bg-trading-surface2 border border-trading-border rounded text-trading-text focus:outline-none"
+            >
+              <option value="">All Statuses</option>
+              {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {(filterTicker || filterAction || filterStatus) && (
+              <button
+                onClick={() => { setFilterTicker(''); setFilterAction(''); setFilterStatus(''); }}
+                className="px-2 py-1 text-xs bg-trading-amber/10 border border-trading-amber text-trading-amber rounded hover:bg-trading-amber/20 transition-colors"
+              >
+                Clear Filters
+              </button>
+            )}
+          </div>
+        )}
+
         {trades.length === 0 ? (
           <p className="text-xs text-trading-textdim">No trades yet.</p>
+        ) : filteredTrades.length === 0 ? (
+          <p className="text-xs text-trading-textdim">No trades match the selected filters.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -493,30 +604,71 @@ export default function Competition() {
                 </tr>
               </thead>
               <tbody>
-                {trades.map((t) => (
-                  <tr
-                    key={t.order_id}
-                    className="border-b border-trading-border/50 hover:bg-trading-surface2"
-                  >
-                    <td className="py-2 px-2 text-trading-textdim font-mono">{formatTime(t.timestamp)}</td>
-                    <td className="py-2 px-2 font-mono text-trading-text">{t.ticker}</td>
-                    <td className="py-2 px-2"><SignalBadge signal={t.action} size="sm" /></td>
-                    <td className="py-2 px-2 text-right font-mono text-trading-text">{formatNotional(t.size_notional)}</td>
-                    <td className="py-2 px-2 text-right font-mono text-trading-textdim">{t.fill_price?.toFixed(4) || '—'}</td>
-                    <td className="py-2 px-2 text-trading-textdim max-w-48 truncate">{t.reason}</td>
-                    <td className="py-2 px-2">
-                      {(t.analysis_id || t.ticker) && (
-                        <button
-                          onClick={() => navigate(`/competition/analysis/${t.analysis_id || t.ticker}`)}
-                          className="flex items-center gap-1 text-trading-emerald hover:text-trading-text text-xs transition-colors cursor-pointer"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          View
-                        </button>
+                {filteredTrades.map((t) => {
+                  const isExpanded = expandedTrade === t.order_id;
+                  return (
+                    <React.Fragment key={t.order_id}>
+                      <tr
+                        onClick={() => setExpandedTrade(isExpanded ? null : t.order_id)}
+                        className="border-b border-trading-border/50 hover:bg-trading-surface2 cursor-pointer transition-colors"
+                      >
+                        <td className="py-2 px-2 text-trading-textdim font-mono">{formatTime(t.timestamp)}</td>
+                        <td className="py-2 px-2">
+                          <a
+                            href={`https://finviz.com/quote.ashx?t=${t.ticker.replace(/[=X]/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-mono text-trading-emerald hover:text-trading-text transition-colors underline"
+                          >
+                            {t.ticker}
+                          </a>
+                        </td>
+                        <td className="py-2 px-2"><SignalBadge signal={t.action} size="sm" /></td>
+                        <td className="py-2 px-2 text-right font-mono text-trading-text">{formatNotional(t.size_notional)}</td>
+                        <td className="py-2 px-2 text-right font-mono text-trading-textdim">{t.fill_price?.toFixed(4) || '—'}</td>
+                        <td className="py-2 px-2 text-trading-textdim max-w-48 truncate">{t.reason}</td>
+                        <td className="py-2 px-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/competition/analysis/${t.analysis_id || t.ticker}`);
+                            }}
+                            className={`flex items-center gap-1 text-xs transition-colors ${t.analysis_id ? 'text-trading-emerald hover:text-trading-text' : 'text-trading-textdim hover:text-trading-amber'}`}
+                            title={t.analysis_id ? 'View full analysis' : 'View latest analysis for this ticker'}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            {t.analysis_id ? 'View' : 'View Latest'}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-trading-surface2/50 border-b border-trading-border/50">
+                          <td colSpan={7} className="py-3 px-4">
+                            <div className="space-y-2 text-xs">
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <p className="text-trading-textdim font-semibold mb-1">Signal Confidence</p>
+                                  <p className="font-mono text-trading-text">{(t.signal_confidence * 100).toFixed(0)}%</p>
+                                </div>
+                                <div>
+                                  <p className="text-trading-textdim font-semibold mb-1">Status</p>
+                                  <p className={`font-mono ${t.status === 'APPROVED' ? 'text-trading-emerald' : t.status === 'REJECTED' ? 'text-trading-red' : 'text-trading-amber'}`}>{t.status}</p>
+                                </div>
+                              </div>
+                              {t.analysis_excerpt && (
+                                <div>
+                                  <p className="text-trading-textdim font-semibold mb-1">Analysis Excerpt</p>
+                                  <p className="text-trading-textdim italic bg-trading-surface rounded p-2">{t.analysis_excerpt}</p>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
