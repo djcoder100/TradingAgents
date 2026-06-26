@@ -27,7 +27,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 
 from competition.config import DEFAULT_INSTRUMENTS
 from competition.risk_firewall import ExecutionEngine
-from competition.api_client import MockBrokerClient
+from competition.api_client import MockBrokerClient, AbstractBrokerClient
 from competition.signal_adapter import SignalAdapter
 from competition.engine import CompetitionEngine
 
@@ -62,8 +62,14 @@ def parse_args() -> argparse.Namespace:
         description="Competition Trading Bot — TradingAgents + Risk Firewall",
     )
     p.add_argument(
-        "--mock", action="store_true", default=True,
-        help="Use the mock broker client for local testing (default).",
+        "--broker", type=str, default="mock", choices=("mock", "alpaca", "oanda", "mt5"),
+        help="Broker adapter: 'mock' (local testing, default), 'alpaca' (stocks/crypto, macOS OK), "
+             "'oanda' (forex/metals, macOS OK), or 'mt5' (MT5 account, Windows only). "
+             "Each broker needs env vars (ALPACA_API_KEY, OANDA_API_KEY, MT5_ACCOUNT_NUMBER, etc.)",
+    )
+    p.add_argument(
+        "--mock", action="store_true", default=False,
+        help="(Deprecated) Use --broker mock instead.",
     )
     p.add_argument(
         "--dry-run", action="store_true",
@@ -165,7 +171,40 @@ def main() -> None:
         logger.info("LLM signals: DISABLED (--no-llm, indicator-only)")
 
     # Wire components
-    broker = MockBrokerClient(instruments=instruments)
+    # Instantiate broker based on --broker flag
+    broker: AbstractBrokerClient
+
+    if args.broker == "alpaca":
+        logger.info("Broker: Alpaca (stocks/crypto, REST API)")
+        try:
+            from competition.alpaca_client import AlpacaClient
+            broker = AlpacaClient()
+        except Exception as e:
+            logger.error("Failed to initialize Alpaca broker: %s", e)
+            logger.error("Falling back to mock broker for testing")
+            broker = MockBrokerClient(instruments=instruments)
+    elif args.broker == "oanda":
+        logger.info("Broker: OANDA (forex/metals, REST API)")
+        try:
+            from competition.oanda_client import OANDAClient
+            broker = OANDAClient()
+        except Exception as e:
+            logger.error("Failed to initialize OANDA broker: %s", e)
+            logger.error("Falling back to mock broker for testing")
+            broker = MockBrokerClient(instruments=instruments)
+    elif args.broker == "mt5":
+        logger.info("Broker: MetaTrader5 (real trading)")
+        try:
+            from competition.mt5_client import MT5Client
+            broker = MT5Client()
+        except Exception as e:
+            logger.error("Failed to initialize MT5 broker: %s", e)
+            logger.error("Falling back to mock broker for testing")
+            broker = MockBrokerClient(instruments=instruments)
+    else:
+        logger.info("Broker: Mock (simulated trading)")
+        broker = MockBrokerClient(instruments=instruments)
+
     firewall = ExecutionEngine()
     signal_adapter = SignalAdapter(config=ta_config)
 
@@ -201,11 +240,18 @@ def main() -> None:
     def handle_shutdown(signum, frame):
         logger.info("Received signal %d — stopping engine", signum)
         engine.stop()
+        if hasattr(broker, "shutdown"):
+            broker.shutdown()
 
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    engine.start()
+    try:
+        engine.start()
+    finally:
+        # Ensure broker is cleaned up on exit
+        if hasattr(broker, "shutdown"):
+            broker.shutdown()
 
 
 if __name__ == "__main__":

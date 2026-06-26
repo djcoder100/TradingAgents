@@ -36,6 +36,9 @@ dependencies = [
     "python-multipart>=0.0.18",
 ]
 
+[project.optional-dependencies]
+mt5 = ["MetaTrader5>=5.0.45"]  # Windows-only, optional for real MT5 trading
+
 [project.scripts]
 tradingagents = "cli.main:app"
 competition = "competition.main:main"

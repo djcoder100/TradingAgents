@@ -21,7 +21,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +137,22 @@ class TraderProposal(BaseModel):
         description="Optional sizing guidance, e.g. '5% of portfolio'.",
     )
 
+    @field_validator("entry_price", "stop_loss", mode="before")
+    @classmethod
+    def convert_null_strings_float(cls, v):
+        """Convert string 'null' to actual None (LLMs sometimes output this)."""
+        if isinstance(v, str) and v.lower() in ("null", "none", "n/a"):
+            return None
+        return v
+
+    @field_validator("position_sizing", mode="before")
+    @classmethod
+    def convert_null_strings_str(cls, v):
+        """Convert string 'null' to actual None (LLMs sometimes output this)."""
+        if isinstance(v, str) and v.lower() in ("null", "none", "n/a"):
+            return None
+        return v
+
 
 def render_trader_proposal(proposal: TraderProposal) -> str:
     """Render a TraderProposal to markdown.
@@ -204,6 +220,14 @@ class PortfolioDecision(BaseModel):
         default=None,
         description="Optional recommended holding period, e.g. '3-6 months'.",
     )
+
+    @field_validator("price_target", "time_horizon", mode="before")
+    @classmethod
+    def convert_null_strings(cls, v):
+        """Convert string 'null' to actual None (LLMs sometimes output this)."""
+        if isinstance(v, str) and v.lower() in ("null", "none", "n/a", "n/a"):
+            return None
+        return v
 
 
 def render_pm_decision(decision: PortfolioDecision) -> str:

@@ -1283,6 +1283,22 @@ wheels = [
 ]
 
 [[package]]
+name = "metatrader5"
+version = "5.0.5735"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/8c/bbfde8e0aa9bd08439cc60c54bab106ea485c1a5e1bc651bbe295bbe9614/metatrader5-5.0.5735-cp310-cp310-win_amd64.whl", hash = "sha256:8f576f271844069e40aefddb70197a07f3e511d71ebc048edc1fbc78695a7ba3", size = 48092, upload-time = "2026-04-04T16:44:07.236Z" },
+    { url = "https://files.pythonhosted.org/packages/07/0b/3dd5143f14319dca393a3bcf11ddf24f36f16dfb8c6d1bf2b193ce0c5733/metatrader5-5.0.5735-cp311-cp311-win_amd64.whl", hash = "sha256:0d05b69cef5eb3f43ea47cb6d36dac0e7e15f82a4fb77974439c565daa54d1c9", size = 48091, upload-time = "2026-04-04T16:44:08.677Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/db/42dc3437c7371492262b0642c64c7b5f67c396bbcb8101ccf182981b67b3/metatrader5-5.0.5735-cp312-cp312-win_amd64.whl", hash = "sha256:f6e8584e48f2c3f5de818f17ee65f0f5adfa1e4af29cd5f4bf3f72b91ff06e10", size = 48062, upload-time = "2026-04-04T16:44:09.905Z" },
+    { url = "https://files.pythonhosted.org/packages/87/2c/7ffc362d84f402b97773be5c6b37f1a0ab9882244c987bbb224c379d17d8/metatrader5-5.0.5735-cp313-cp313-win_amd64.whl", hash = "sha256:0933ea4a9a52b32adcf5590df00f9f75ff380a02bad7b62e23cbd757f34fbb12", size = 48071, upload-time = "2026-04-04T16:44:11.09Z" },
+    { url = "https://files.pythonhosted.org/packages/33/51/4a70004f8af537393861c31a3c211f818b8199fea8baf8c0b1f571d67c56/metatrader5-5.0.5735-cp314-cp314-win_amd64.whl", hash = "sha256:b69765be2eece9f884b60b6d008c7608ad77d7bfc5fbfbb8c23e3e3bb8dc88ba", size = 49590, upload-time = "2026-04-04T16:44:12.306Z" },
+]
+
+[[package]]
 name = "multidict"
 version = "6.4.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2466,6 +2482,11 @@ dependencies = [
     { name = "yfinance" },
 ]
 
+[package.optional-dependencies]
+mt5 = [
+    { name = "metatrader5" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "backtrader", specifier = ">=1.9.78.123" },
@@ -2477,6 +2498,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=0.3.23" },
     { name = "langgraph", specifier = ">=0.4.8" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0.0" },
+    { name = "metatrader5", marker = "extra == 'mt5'", specifier = ">=5.0.45" },
     { name = "pandas", specifier = ">=2.3.0" },
     { name = "parsel", specifier = ">=1.10.0" },
     { name = "python-multipart", specifier = ">=0.0.18" },
@@ -2494,6 +2516,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
     { name = "yfinance", specifier = ">=1.4.1" },
 ]
+provides-extras = ["mt5"]
 
 [[package]]
 name = "typer"

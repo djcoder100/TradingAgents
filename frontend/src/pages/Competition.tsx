@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, TrendingDown, Activity,
   AlertTriangle, Clock, BarChart3, Target, Shield,
-  ChevronRight, ExternalLink, Info, Repeat2,
+  ChevronRight, ExternalLink, Info, Repeat2, Settings, X,
 } from 'lucide-react';
 import SignalBadge from '../components/shared/SignalBadge';
 import MarkdownRenderer from '../components/shared/MarkdownRenderer';
@@ -126,6 +126,19 @@ export default function Competition() {
   const [filterTicker, setFilterTicker] = useState<string>('');
   const [filterAction, setFilterAction] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettingsData] = useState<any>(null);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/competition/settings`);
+      if (res.ok) {
+        setSettingsData(await res.json());
+      }
+    } catch (e) {
+      console.debug('Could not fetch settings:', e);
+    }
+  }, []);
 
   const fetchState = useCallback(async () => {
     try {
@@ -187,13 +200,14 @@ export default function Competition() {
 
   useEffect(() => {
     console.info('[Competition] Dashboard mounted, starting data poll');
+    fetchSettings();
     fetchState();
     const interval = setInterval(fetchState, 2000);
     return () => {
       clearInterval(interval);
       console.info('[Competition] Dashboard unmounted, stopped data poll');
     };
-  }, [fetchState]);
+  }, [fetchState, fetchSettings]);
 
   // ---- Error / waiting state ----
   if (error) {
@@ -267,13 +281,76 @@ export default function Competition() {
     <div className="space-y-6 animate-slide-up">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-bold text-trading-text">Competition Dashboard</h1>
-        <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-trading-emerald animate-none' : 'bg-trading-amber animate-pulse'}`} />
-          <span className={`text-xs font-mono ${isConnected ? 'text-trading-emerald' : 'text-trading-amber'}`}>
-            {isConnected ? 'Connected' : `Reconnecting (${retryCount})`}
-          </span>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-2 hover:bg-trading-surface rounded-lg transition-colors"
+            title="Show settings"
+          >
+            <Settings className="w-4 h-4 text-trading-textdim hover:text-trading-text" />
+          </button>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-trading-emerald animate-none' : 'bg-trading-amber animate-pulse'}`} />
+            <span className={`text-xs font-mono ${isConnected ? 'text-trading-emerald' : 'text-trading-amber'}`}>
+              {isConnected ? 'Connected' : `Reconnecting (${retryCount})`}
+            </span>
+          </div>
         </div>
       </div>
+
+      {/* ---- Settings Panel ---- */}
+      {showSettings && settings && (
+        <div className="bg-trading-surface border border-trading-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-trading-textdim uppercase tracking-wide">Engine Configuration</h2>
+            <button
+              onClick={() => setShowSettings(false)}
+              className="p-1 hover:bg-trading-surface2 rounded transition-colors"
+            >
+              <X className="w-4 h-4 text-trading-textdim" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">LLM Provider</p>
+              <p className="text-trading-text font-mono text-xs break-all">{settings.llm_provider || '—'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">Backend URL</p>
+              <p className="text-trading-text font-mono text-xs break-all">{settings.llm_backend_url || 'default'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">Quick Think Model</p>
+              <p className="text-trading-text font-mono text-xs break-all">{settings.quick_think_model || '—'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">Deep Think Model</p>
+              <p className="text-trading-text font-mono text-xs break-all">{settings.deep_think_model || '—'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">Instruments</p>
+              <p className="text-trading-text font-mono text-xs break-all">{settings.instruments || '—'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">Day Trading Mode</p>
+              <p className="text-trading-text font-mono text-xs">{settings.day_trading_mode ? '✓ Enabled' : '✗ Disabled'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">Close at EOD</p>
+              <p className="text-trading-text font-mono text-xs">{settings.close_at_eod ? '✓ Enabled' : '✗ Disabled'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50">
+              <p className="text-trading-textdim font-mono mb-1">Dry Run Mode</p>
+              <p className="text-trading-text font-mono text-xs">{settings.dry_run ? '✓ Enabled' : '✗ Disabled'}</p>
+            </div>
+            <div className="bg-trading-surface2 rounded-lg p-3 border border-trading-border/50 md:col-span-2">
+              <p className="text-trading-textdim font-mono mb-1">State Service URL</p>
+              <p className="text-trading-text font-mono text-xs break-all">{settings.state_service_url || '—'}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Scoreboard Bar ---- */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">

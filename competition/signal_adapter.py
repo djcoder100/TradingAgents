@@ -23,6 +23,7 @@ from competition.config import (
     TA_ANALYSTS,
     TA_MAX_DEBATE_ROUNDS,
     TA_MAX_RISK_ROUNDS,
+    ACTIVE_POSITION_PCT,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,10 +110,12 @@ class SignalAdapter:
         cfg["max_debate_rounds"] = TA_MAX_DEBATE_ROUNDS
         cfg["max_risk_discuss_rounds"] = TA_MAX_RISK_ROUNDS
 
+        backend_url = cfg.get("backend_url") or "default"
         logger.info(
-            "Starting TA analysis for %s | provider=%s quick=%s deep=%s",
+            "Starting TA analysis for %s | provider=%s backend=%s quick=%s deep=%s",
             ticker,
             cfg.get("llm_provider"),
+            backend_url,
             cfg.get("quick_think_llm"),
             cfg.get("deep_think_llm"),
         )
@@ -218,8 +221,8 @@ class SignalAdapter:
         if action == OrderAction.HOLD:
             return None  # no trade to propose
 
-        # Position sizing
-        pct = decision.get("position_pct") or DEFAULT_POSITION_PCT
+        # Position sizing (uses ACTIVE_POSITION_PCT which switches based on day-trading mode)
+        pct = decision.get("position_pct") or ACTIVE_POSITION_PCT
         pct = min(float(pct), MAX_POSITION_PCT)
         notional = account.equity * pct
         if notional < MIN_ORDER_NOTIONAL:

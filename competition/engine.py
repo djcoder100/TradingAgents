@@ -26,6 +26,8 @@ from competition.config import (
     MAX_CONCURRENT_POSITIONS,
     SIGNAL_STALE_S,
     TRADINGAGENTS_MAX_INSTRUMENTS,
+    ACTIVE_POSITION_PCT,
+    DAY_TRADING_MODE,
 )
 from competition.models import (
     TradeSignal,
@@ -149,7 +151,12 @@ class CompetitionEngine:
             # Update tracker
             self.tracker.update(account, positions, prices)
 
-            # 2. Check exit conditions
+            # 1b. Check if it's EOD — close all positions before market close (day-trading mode)
+            if self.scheduler.should_close_all_positions():
+                self._close_all_positions_eod(account, positions, prices)
+                return  # skip rest of tick after EOD close
+
+            # 2. Check exit conditions (including max hold time for day-trading)
             self._check_exits(account, positions, prices)
 
             # 3. Check entry conditions for active signals
@@ -181,7 +188,13 @@ class CompetitionEngine:
         positions: list,
         prices: dict[str, float],
     ) -> None:
-        """Check exit conditions for every open position."""
+        """Check exit conditions for every open position.
+
+        Includes: technical exits, signal expirations, and day-trading max hold time.
+        """
+        # First check max hold time (day-trading mode)
+        self._check_max_hold_time(account, positions, prices)
+
         for pos in positions:
             px = prices.get(pos.ticker, pos.avg_entry_price)
             signal = self.active_signals.get(pos.ticker)
@@ -254,6 +267,76 @@ class CompetitionEngine:
                     if result and entry_order.order_type == "LIMIT":
                         self._pending_limits[result.order_id] = (entry_order, ticker)
                         self._open_orders[ticker] = result.order_id
+
+    # ------------------------------------------------------------------
+    # Day-trading: EOD close & max hold time
+    # ------------------------------------------------------------------
+
+    def _close_all_positions_eod(
+        self,
+        account: AccountState,
+        positions: list,
+        prices: dict[str, float],
+    ) -> None:
+        """Close all open positions at end-of-day (market close)."""
+        if not positions:
+            return
+
+        logger.warning("🌅 END-OF-DAY: Closing all %d positions at market close", len(positions))
+
+        for pos in positions:
+            close_order = RegulatedOrder(
+                ticker=pos.ticker,
+                action=OrderAction.SELL if pos.direction == "BUY" else OrderAction.BUY,
+                order_size_notional=pos.size_notional if hasattr(pos, 'size_notional') else pos.size * prices.get(pos.ticker, pos.current_price or pos.entry_price),
+                order_type="MARKET",
+            )
+
+            approved = self.firewall.verify_and_route(close_order, account)
+            if approved.status in (ApprovalStatus.APPROVED, ApprovalStatus.MUTATED):
+                if approved.status == ApprovalStatus.MUTATED and approved.safe_size:
+                    close_order.order_size_notional = approved.safe_size
+                result = self._dispatch(close_order, is_close=True)
+                if result:
+                    logger.info("✓ EOD closed: %s (P&L: $%.2f)", pos.ticker, pos.unrealized_pnl or 0)
+
+        # Clear all signals at EOD
+        self.active_signals.clear()
+        logger.info("EOD close complete — all positions liquidated, signals cleared")
+
+    def _check_max_hold_time(
+        self,
+        account: AccountState,
+        positions: list,
+        prices: dict[str, float],
+    ) -> None:
+        """For day-trading: close positions that exceed max hold time (default 2 hours)."""
+        from competition.config import DAY_TRADING_MODE
+
+        if not DAY_TRADING_MODE:
+            return
+
+        for pos in positions:
+            # Check if position age exceeds max hold time
+            if self.scheduler.position_exceeded_max_hold(pos.opened_at):
+                logger.warning(
+                    "⏰ MAX HOLD exceeded: %s held for %.0f min, closing",
+                    pos.ticker,
+                    (time.time() - pos.opened_at) / 60.0,
+                )
+
+                close_order = RegulatedOrder(
+                    ticker=pos.ticker,
+                    action=OrderAction.SELL if pos.direction == "BUY" else OrderAction.BUY,
+                    order_size_notional=pos.size_notional if hasattr(pos, 'size_notional') else pos.size * prices.get(pos.ticker, pos.current_price or pos.entry_price),
+                    order_type="MARKET",
+                )
+
+                approved = self.firewall.verify_and_route(close_order, account)
+                if approved.status in (ApprovalStatus.APPROVED, ApprovalStatus.MUTATED):
+                    if approved.status == ApprovalStatus.MUTATED and approved.safe_size:
+                        close_order.order_size_notional = approved.safe_size
+                    self._dispatch(close_order, is_close=True)
 
     # ------------------------------------------------------------------
     # Signal refresh (TradingAgents)
@@ -338,7 +421,6 @@ class CompetitionEngine:
         (5-period vs 20-period SMA crossover).
         """
         import time as _time
-        from competition.config import DEFAULT_POSITION_PCT
 
         account = self.broker.get_account_state()
         candidates = SignalAdapter.select_instruments_to_analyze(
@@ -368,7 +450,7 @@ class CompetitionEngine:
                     action = OrderAction.SELL
                     confidence = 0.45
 
-                notional = account.equity * DEFAULT_POSITION_PCT
+                notional = account.equity * ACTIVE_POSITION_PCT
                 signal = TradeSignal(
                     action=action,
                     ticker=ticker,

@@ -133,3 +133,75 @@ async def get_metrics(request: Request):
         "uptime": snap["uptime"],
         "last_updated": snap["last_updated"],
     }
+
+
+@router.get("/competition/broker")
+async def get_broker_info(request: Request):
+    """Get information about the current broker connection."""
+    # Detect broker from environment or state
+    import os
+
+    broker_env = os.environ.get("COMPETITION_BROKER", "mock")
+
+    # Try to get broker type from state (if set by engine)
+    snap, _ = _get_state(request)
+    broker_type = snap.get("broker_type", broker_env) if snap else broker_env
+
+    # Map broker type to display name and features
+    broker_info = {
+        "mock": {
+            "name": "Mock Broker (Simulated)",
+            "type": "mock",
+            "mode": "simulated",
+            "features": ["testing", "development"],
+            "manual_trading": False,
+            "api_available": False,
+        },
+        "alpaca": {
+            "name": "Alpaca (REST API)",
+            "type": "alpaca",
+            "mode": "paper" if os.environ.get("ALPACA_IS_PAPER", "true").lower() in ("true", "1") else "live",
+            "features": ["stocks", "crypto", "macOS"],
+            "manual_trading": False,
+            "api_available": True,
+        },
+        "oanda": {
+            "name": "OANDA (REST API)",
+            "type": "oanda",
+            "mode": "practice" if os.environ.get("OANDA_ENVIRONMENT", "practice") == "practice" else "live",
+            "features": ["forex", "metals", "50:1 leverage", "macOS"],
+            "manual_trading": False,
+            "api_available": True,
+        },
+        "mt5": {
+            "name": "MetaTrader5 (Desktop Client)",
+            "type": "mt5",
+            "mode": "demo" if os.environ.get("MT5_ACCOUNT_TYPE", "demo") == "demo" else "live",
+            "features": ["forex", "stocks", "options", "manual entry"],
+            "manual_trading": True,
+            "api_available": True,
+        },
+    }
+
+    info = broker_info.get(broker_type, broker_info["mock"])
+    info["broker_type"] = broker_type
+
+    return info
+
+
+@router.get("/competition/settings")
+def get_settings():
+    """Return current engine configuration for display in frontend settings panel."""
+    return {
+        "llm_provider": os.environ.get("TRADINGAGENTS_LLM_PROVIDER", "unknown"),
+        "llm_backend_url": os.environ.get("TRADINGAGENTS_LLM_BACKEND_URL", "default"),
+        "quick_think_model": os.environ.get("TRADINGAGENTS_QUICK_THINK_LLM", "unknown"),
+        "deep_think_model": os.environ.get("TRADINGAGENTS_DEEP_THINK_LLM", "unknown"),
+        "instruments": os.environ.get("COMPETITION_INSTRUMENTS", "XAUUSD,EURUSD,GBPUSD"),
+        "day_trading_mode": os.environ.get("COMPETITION_DAY_TRADING", "false").lower() == "true",
+        "close_at_eod": os.environ.get("COMPETITION_CLOSE_AT_EOD", "true").lower() == "true",
+        "dry_run": os.environ.get("COMPETITION_DRY_RUN", "false").lower() == "true",
+        "state_service_url": os.environ.get("COMPETITION_STATE_SERVICE_URL", "http://localhost:9000"),
+        "web_port": os.environ.get("TRADINGAGENTS_WEB_PORT", "8000"),
+        "frontend_port": os.environ.get("VITE_PORT", "5173"),
+    }

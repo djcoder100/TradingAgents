@@ -45,6 +45,18 @@ DEFAULT_POSITION_PCT = 0.05   # 5% of equity per trade when no explicit size
 MAX_POSITION_PCT = 0.12       # 12% max per single position
 MIN_ORDER_NOTIONAL = 1000.0   # don't bother with sub-$1k orders
 
+# Day-trading mode: reduce per-trade risk since we trade more frequently
+DAY_TRADING_MODE = os.environ.get("COMPETITION_DAY_TRADING", "true").lower() in ("true", "1", "yes")
+DAY_TRADING_POSITION_PCT = 0.02  # 2% per trade (vs 5% for overnight holds)
+DAY_TRADING_CLOSE_EOD = os.environ.get("COMPETITION_CLOSE_AT_EOD", "true").lower() in ("true", "1", "yes")
+DAY_TRADING_EOD_BUFFER_MIN = 10  # close positions 10 min before market close
+DAY_TRADING_MAX_HOLD_MIN = 120   # max 2 hours to hold a position
+DAY_TRADING_STOP_LOSS_PIPS = int(os.environ.get("COMPETITION_STOP_LOSS_PIPS", "10"))  # 10 pips typical
+DAY_TRADING_TAKE_PROFIT_PIPS = int(os.environ.get("COMPETITION_TAKE_PROFIT_PIPS", "15"))  # 15 pips target
+
+# Use day-trading position sizing if enabled
+ACTIVE_POSITION_PCT = DAY_TRADING_POSITION_PCT if DAY_TRADING_MODE else DEFAULT_POSITION_PCT
+
 # ---------------------------------------------------------------------------
 # Technical indicator parameters (entry/exit timing)
 # ---------------------------------------------------------------------------
